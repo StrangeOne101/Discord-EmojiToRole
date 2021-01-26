@@ -24,7 +24,7 @@ module.exports = function(client, config) {
 			var member = messageReaction.message.guild.members.cache.get(user.id);
 			var emojiDiscriminator = getEmojiDiscriminator(messageReaction.emoji);
 			(async () => {
-				for (var { channel, reactions, disjoint } of config) {
+				for (var { channel, reactions, disjoint, messages } of config) {
 					if (channel != messageReaction.message.channel.id) continue;
 					var rolesNew = [];
 					for(var role of member.roles.cache.keys()){
@@ -32,9 +32,11 @@ module.exports = function(client, config) {
 					}
 					var rolesWhitelist = [];
 					var rolesBlacklist = [];
-					for (var { emoji, roles } of reactions) {
+					var targetChannel = null;
+					for (var { emoji, roles, channel: chan} of reactions) {
 						if (emojiDiscriminator == emoji) {
 							rolesWhitelist.push.apply(rolesWhitelist, roles); //Prototyping the push function, might be buggy
+							targetChannel = messageReaction.message.guild.channels.cache.get(chan);
 						}
 						rolesBlacklist.push.apply(rolesBlacklist, roles);
 					}
@@ -47,8 +49,22 @@ module.exports = function(client, config) {
 					}
 					rolesNew.push.apply(rolesNew, rolesWhitelist);
 					//Make sure none of the roles on the "add" list get removed again
+
 					await member.roles.set(rolesNew)
-						.catch(error => console.error(error));
+					    .then(() => {
+					        if (targetChannel != null && targetChannel !== 'undefined') {
+					            targetChannel.send(messages.join.replace("{user}", member.user.toString()).replace("{channel}", "<#" + targetChannel.id + ">"))
+					            .catch(error => console.error(error));
+					        }
+                            console.log("[+] " + member.user.tag + " | Added role [" + messageReaction.message.guild.roles.cache.get(rolesWhitelist[0]).name + "] to user")
+					    })
+						.catch(error => {
+						    if (error.code == 50035) {
+						        console.log("[+] " + member.user.tag + " | Tried to add role [" + messageReaction.message.guild.roles.cache.get(rolesWhitelist[0]).name + "] but they already had it")
+						        return;
+						    }
+						    console.error(error)
+						});
 					if (disjoint) await messageReaction.users.remove(user)
 						.catch(error => console.error(error));
 				}
@@ -61,16 +77,18 @@ module.exports = function(client, config) {
 			var member = messageReaction.message.guild.members.cache.get(user.id);
 			var emojiDiscriminator = getEmojiDiscriminator(messageReaction.emoji);
 			(async () => {
-				for (var { disjoint, channel, reactions } of config) {
+				for (var { disjoint, channel, reactions, messages } of config) {
 					//Make sure we're not in "disjoint" mode
 					if (disjoint) continue;
 					if (channel != messageReaction.message.channel.id) continue;
 					var rolesToKeep = [];
 					var rolesToRemove = [];
-					for (var { emoji, roles } of reactions) {
+					var targetChannel = null;
+					for (var { emoji, roles, channel: chan } of reactions) {
 						if (emojiDiscriminator == emoji) {
 							//Add to removal list
 							rolesToRemove.push.apply(rolesToRemove, roles);
+							targetChannel = messageReaction.message.guild.channels.cache.get(chan);
 						} else {
 							//List of all other roles that should be kept
 							rolesToKeep.push.apply(rolesToKeep, roles);
@@ -82,8 +100,22 @@ module.exports = function(client, config) {
 						//Make sure member actually has role
 						(member.roles.cache.get(role))
 					);
-					await member.removeRoles(rolesToRemove)
-						.catch(error => console.error(error));
+					await member.roles.remove(rolesToRemove)
+					    .then(() => {
+
+					        if (targetChannel != null && targetChannel !== 'undefined') {
+					            targetChannel.send(messages.leave.replace("{user}", member.user.toString()).replace("{channel}", "<#" + targetChannel.id + ">"))
+					            .catch(error => console.error(error));;
+					         }
+                             console.log("[-] " + member.user.tag + " | Removed role [" + messageReaction.message.guild.roles.cache.get(rolesToRemove[0]).name + "] from user")
+                    	})
+						.catch(error => {
+						    if (error.code == 50035) {
+                    		    console.log("[-] " + member.user.tag + " | Tried to remove role [" + messageReaction.message.guild.roles.cache.get(rolesToRemove[0]).name + "] but they didn't have it")
+                        		return;
+                        	}
+						    console.error(error);
+						});
 				}
 			})();
 		});
